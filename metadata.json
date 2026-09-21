@@ -1,0 +1,6 @@
+{
+  "name": "JalRakshak AI",
+  "description": "An offline-first, multilingual water-risk intelligence platform for villages. Predicts water risks, prioritizes panchayat action, and protects communities.",
+  "requestFramePermissions": ["geolocation", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
