@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { 
   Mic, 
   MicOff, 
@@ -19,6 +19,8 @@ import {
 import { CitizenReport, IssueCategory, AppLanguage, WardInfo, WaterAsset } from '../types';
 import { getOfflineInstantSafetyAdvice } from '../services/aiIntelligence';
 import { playAudioFeedback, speakAloud } from '../services/speechService';
+import { uploadReportPhoto } from '../services/reports';
+
 
 interface CitizenViewProps {
   language: AppLanguage;
@@ -53,6 +55,25 @@ export function CitizenView({
   const [photoPreview, setPhotoPreview] = useState<string | null>(
     'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&w=400&q=80'
   );
+  const [uploadingPhoto, setUploadingPhoto] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    // Show instant local preview
+    const localUrl = URL.createObjectURL(file);
+    setPhotoPreview(localUrl);
+
+    // If online & configured, upload to Supabase storage
+    const uploadedUrl = await uploadReportPhoto(file);
+    if (uploadedUrl) {
+      setPhotoPreview(uploadedUrl);
+    }
+    setUploadingPhoto(false);
+  };
+
 
   // Voice recording simulation
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -477,6 +498,13 @@ export function CitizenView({
               <label className="block text-xs font-semibold text-slate-600 mb-1">
                 {isHi ? 'तस्वीर प्रमाण (वैकल्पिक):' : 'Photo Proof (Optional):'}
               </label>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handleImageFileChange}
+                className="hidden"
+              />
               <div className="flex items-center gap-3">
                 {photoPreview ? (
                   <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-300 flex-shrink-0">
@@ -492,15 +520,16 @@ export function CitizenView({
                 ) : (
                   <button
                     type="button"
-                    onClick={() =>
-                      setPhotoPreview(
-                        'https://images.unsplash.com/photo-1584824486509-112e4181ff6b?auto=format&fit=crop&w=400&q=80'
-                      )
-                    }
-                    className="flex items-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-xl text-xs text-slate-600 hover:bg-slate-50"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingPhoto}
+                    className="flex items-center gap-1.5 px-3 py-2 border border-dashed border-slate-300 rounded-xl text-xs text-slate-600 hover:bg-slate-50 transition-colors"
                   >
                     <Camera className="w-4 h-4 text-slate-500" />
-                    <span>{isHi ? 'फोटो जोड़ें' : 'Attach Photo'}</span>
+                    <span>
+                      {uploadingPhoto
+                        ? (isHi ? 'अपलोड हो रहा है...' : 'Uploading...')
+                        : (isHi ? 'फोटो चुनें' : 'Attach Photo')}
+                    </span>
                   </button>
                 )}
                 <span className="text-[11px] text-slate-500">

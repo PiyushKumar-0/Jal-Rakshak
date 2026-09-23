@@ -15,6 +15,13 @@ import { PanchayatCockpit } from './components/PanchayatCockpit';
 import { FieldTeamView } from './components/FieldTeamView';
 import { DistrictEvalView } from './components/DistrictEvalView';
 import { DemoScriptModal } from './components/DemoScriptModal';
+import { AuthModal } from './components/AuthModal';
+import { UserProfile, getCurrentUserProfile } from './services/auth';
+import { createWaterReport, fetchWaterReports, syncOfflineReports } from './services/reports';
+import { createTask } from './services/tasks';
+import { submitInspection } from './services/inspections';
+import { submitCitizenFeedback } from './services/feedback';
+import { isSupabaseConfigured } from './lib/supabase';
 import { Shield, Droplets, CheckCircle2, Wifi, WifiOff } from 'lucide-react';
 
 export default function App() {
@@ -22,6 +29,10 @@ export default function App() {
   const [language, setLanguage] = useState<AppLanguage>('hi');
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [rainfallMm, setRainfallMm] = useState<number>(45);
+
+  // Auth & Profile state
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
 
   // Core village state
   const [wards, setWards] = useState(SHIVPUR_WARDS);
@@ -34,6 +45,26 @@ export default function App() {
   // Demo script modal
   const [isDemoModalOpen, setIsDemoModalOpen] = useState<boolean>(false);
 
+  const [appError, setAppError] = useState<string | null>(null);
+
+  // Load initial Supabase data and User session
+  useEffect(() => {
+    async function loadInitialData() {
+      if (isSupabaseConfigured) {
+        const profile = await getCurrentUserProfile();
+        if (profile) {
+          setCurrentUser(profile);
+          setCurrentRole(profile.role);
+        }
+        const dbReports = await fetchWaterReports();
+        if (dbReports && dbReports.length > 0) {
+          setReports(dbReports);
+        }
+      }
+    }
+    loadInitialData();
+  }, []);
+
   // Track offline drafts count
   useEffect(() => {
     const drafts = reports.filter(r => r.isOfflineDraft).length;
@@ -41,7 +72,8 @@ export default function App() {
   }, [reports]);
 
   // Handle citizen submitting a report
-  const handleSubmitReport = (partialReport: Partial<CitizenReport>) => {
+  const handleSubmitReport = async (partialReport: Partial<CitizenReport>) => {
+    setAppError(null);
     const newId = `rep-${Date.now().toString().slice(-4)}`;
     const ward = wards.find(w => w.id === partialReport.wardId) || wards[2];
     const asset = assets.find(a => a.id === partialReport.assetId);
@@ -62,8 +94,8 @@ export default function App() {
 
     const newReport: CitizenReport = {
       id: newId,
-      reporterHash: `usr_${Math.random().toString(36).substring(2, 8)}`,
-      reporterName: 'ग्रामीण नागरिक (वार्ड निवासी)',
+      reporterHash: currentUser ? currentUser.id.slice(0, 8) : `usr_${Math.random().toString(36).substring(2, 8)}`,
+      reporterName: currentUser ? currentUser.full_name : 'ग्रामीण नागरिक (वार्ड निवासी)',
       wardId: partialReport.wardId || 'ward-3',
       assetId: partialReport.assetId,
       category: partialReport.category || 'smell_colour',
@@ -81,6 +113,27 @@ export default function App() {
       assignedTo: riskScores.priorityScore >= 70 ? 'विनोद कुमार (जल मिस्त्री)' : undefined,
       slaDueHours: riskScores.priorityScore >= 70 ? 4 : 8,
     };
+
+    // Save to Supabase backend if online & configured
+    if (!isOffline && isSupabaseConfigured) {
+      const res = await createWaterReport({
+        category: newReport.category,
+        description: newReport.text,
+        ward: newReport.wardId,
+        sourceId: newReport.assetId,
+        photoUrl: newReport.photoUrl,
+        healthFlag: newReport.healthFlag,
+        affectedHouseholdsCount: newReport.affectedHouseholdsCount,
+        isOffline: false,
+        userId: currentUser?.id,
+      });
+
+      if (res.error) {
+        setAppError(res.error);
+      } else if (res.data && res.data.id) {
+        newReport.id = res.data.id;
+      }
+    }
 
     setReports(prev => [newReport, ...prev]);
 
@@ -103,8 +156,12 @@ export default function App() {
   };
 
   // Sync offline queue when reconnecting
-  const handleSyncOfflineQueue = () => {
+  const handleSyncOfflineQueue = async () => {
     playAudioFeedback('success');
+    if (isSupabaseConfigured) {
+      const offlineReports = reports.filter(r => r.isOfflineDraft);
+      await syncOfflineReports(offlineReports);
+    }
     setReports(prevReports =>
       prevReports.map(rep => {
         if (rep.isOfflineDraft) {
@@ -121,7 +178,15 @@ export default function App() {
   };
 
   // Field team assigns task
-  const handleAssignTask = (reportId: string, assignee: string) => {
+  const handleAssignTask = async (reportId: string, assignee: string) => {
+    if (isSupabaseConfigured) {
+      await createTask({
+        reportId,
+        title: `Repair / Inspection task for ${reportId}`,
+        assignedTo: undefined,
+        priority: 'high',
+      });
+    }
     setReports(prev =>
       prev.map(r =>
         r.id === reportId
@@ -137,7 +202,15 @@ export default function App() {
   };
 
   // Field worker verifies and closes report
-  const handleResolveReport = (reportId: string, notes: string, testFindings?: string) => {
+  const handleResolveReport = async (reportId: string, notes: string, testFindings?: string) => {
+    if (isSupabaseConfigured) {
+      await submitInspection({
+        taskId: `task-${reportId}`,
+        reportId,
+        observations: notes,
+        waterQualityStatus: testFindings || 'tested_safe',
+      });
+    }
     setReports(prev =>
       prev.map(r =>
         r.id === reportId
@@ -168,8 +241,16 @@ export default function App() {
   };
 
   // Citizen confirms resolution or reopens
-  const handleConfirmResolution = (reportId: string, confirmed: boolean, comment?: string) => {
+  const handleConfirmResolution = async (reportId: string, confirmed: boolean, comment?: string) => {
     playAudioFeedback('success');
+    if (isSupabaseConfigured) {
+      await submitCitizenFeedback({
+        reportId,
+        confirmed,
+        comment,
+        userId: currentUser?.id,
+      });
+    }
     setReports(prev =>
       prev.map(r =>
         r.id === reportId
@@ -218,7 +299,26 @@ export default function App() {
           onOpenDemoScript={() => setIsDemoModalOpen(true)}
           activeClusterCount={clusters.filter(c => c.status === 'active').length}
           onSyncOfflineQueue={handleSyncOfflineQueue}
+          currentUser={currentUser}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
         />
+
+        {appError && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            <div className="bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-xl flex items-center justify-between text-xs font-semibold shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-base">⚠️</span>
+                <span>{appError}</span>
+              </div>
+              <button
+                onClick={() => setAppError(null)}
+                className="text-rose-600 hover:text-rose-900 font-bold ml-2 px-2 py-0.5 rounded hover:bg-rose-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Main Content by Selected Role */}
         <main className="pb-12">
@@ -286,6 +386,20 @@ export default function App() {
           });
         }}
         onSetRainfall={setRainfallMm}
+      />
+
+      {/* Supabase Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={currentUser}
+        onAuthSuccess={userProfile => {
+          setCurrentUser(userProfile);
+          if (userProfile?.role) {
+            setCurrentRole(userProfile.role);
+          }
+        }}
+        language={language}
       />
 
       {/* Footer & SDG Badges */}

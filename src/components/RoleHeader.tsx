@@ -1,5 +1,6 @@
-import { Droplets, Shield, Wifi, WifiOff, Volume2, HelpCircle, CheckCircle2 } from 'lucide-react';
+import { Droplets, Shield, Wifi, WifiOff, Volume2, HelpCircle, CheckCircle2, User, LogIn } from 'lucide-react';
 import { UserRole, AppLanguage } from '../types';
+import { UserProfile } from '../services/auth';
 
 interface RoleHeaderProps {
   currentRole: UserRole;
@@ -12,6 +13,8 @@ interface RoleHeaderProps {
   onOpenDemoScript: () => void;
   activeClusterCount: number;
   onSyncOfflineQueue: () => void;
+  currentUser?: UserProfile | null;
+  onOpenAuthModal?: () => void;
 }
 
 export function RoleHeader({
@@ -25,6 +28,8 @@ export function RoleHeader({
   onOpenDemoScript,
   activeClusterCount,
   onSyncOfflineQueue,
+  currentUser,
+  onOpenAuthModal,
 }: RoleHeaderProps) {
   const isHi = language === 'hi';
 
@@ -144,6 +149,30 @@ export function RoleHeader({
               <HelpCircle className="w-3.5 h-3.5" />
               <span>{isHi ? '90-सेकंड लाइव डेमो' : '90s Demo Script'}</span>
             </button>
+
+            {/* Supabase Auth Account Button */}
+            {onOpenAuthModal && (
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 font-semibold text-xs rounded-lg border border-slate-700 transition-all"
+              >
+                {currentUser ? (
+                  <>
+                    <User className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="max-w-[90px] truncate">{currentUser.full_name.split(' ')[0]}</span>
+                    <span className="px-1 py-0.2 bg-emerald-500/20 text-emerald-300 text-[10px] rounded uppercase font-bold">
+                      {currentUser.role}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-3.5 h-3.5 text-sky-400" />
+                    <span>{isHi ? 'लॉग इन / खाता' : 'Log In / Account'}</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
