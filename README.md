@@ -1,3 +1,4 @@
+Live Demo :https://jal-rakshak-jh8k-c9l008hxx-mind-matrix4.vercel.app/
 # 💧 JalRakshak AI
 
 ### AI-Powered Water Intelligence & Community Response Platform
@@ -162,4 +163,4 @@ Verification
 Citizen Feedback
 
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-SafeRoute%20India-2563EB?style=for-the-badge)](https://saferouteindia.vercel.app/)
+
